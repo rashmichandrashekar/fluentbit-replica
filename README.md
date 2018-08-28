@@ -27,4 +27,21 @@ Output should look like this: rashmi@rashmi-linux-go:~/go/src/KPI$ ldd out_kubep
         libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f9992acf000)
         /lib64/ld-linux-x86-64.so.2 (0x00007f9994ff3000)
         
+        
+#install fluentbit on omsagent's pod
+
+wget -qO - https://packages.fluentbit.io/fluentbit.key | sudo apt-key add -
+
+sudo echo "deb https://packages.fluentbit.io/ubuntu/xenial xenial main" >> /etc/apt/sources.list  
+
+sudo apt-get update
+
+sudo apt-get install td-agent-bit sqlite3 libsqlite3-dev
+
+
+
+#start fluent-bit
+
+/opt/td-agent-bit/bin/td-agent-bit -c /etc/td-agent-bit/td-agent-bit.conf -e <path to.so file>
+        
 
