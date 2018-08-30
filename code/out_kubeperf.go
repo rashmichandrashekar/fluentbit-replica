@@ -1,68 +1,80 @@
 package main
 
+import "github.com/fluent/fluent-bit-go/output"
 import (
-	"bytes"
-	"crypto/tls"
-	"encoding/json"
-	"flag"
 	"fmt"
+	"unsafe"
+	"C"
+	"flag"
 	"log"
+	"encoding/json"
+	"crypto/tls"
 	"net/http"
+	"bytes"
 	"time"
 	 metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	 "k8s.io/client-go/kubernetes"
-	 "k8s.io/client-go/tools/clientcmd"
+	 //"k8s.io/client-go/tools/clientcmd"
 	 v1 "k8s.io/api/core/v1"
 	 "k8s.io/apimachinery/pkg/types"
 	 "strings"
 	 "os"
 	"github.com/mitchellh/mapstructure"
+	"k8s.io/client-go/rest"
 )
+
+var (
+	// KeyFile is the path to the private key file used for auth
+	keyFile = flag.String("key", "/etc/opt/microsoft/omsagent/6d3a50d0-808e-4d66-86c0-7b99d810ffe1/certs/oms.key", "Private Key File")
+
+	// CertFile is the path to the cert used for auth
+	certFile = flag.String("cert", "/etc/opt/microsoft/omsagent/6d3a50d0-808e-4d66-86c0-7b99d810ffe1/certs/oms.crt", "OMS Agent Certificate")
+)
+
+var NodeMetrics:= make(map[interface{}]interface{})
 
 // DataItem represents the object corresponding to the json that is sent by fluentbit tail plugin
 type DataItem struct {
-	CollectionTime                string       `json:"CollectionTime"`
-	Name                          string       `json:"Name"`
-	PodUid                        string       `json:"PodUid"`
-	PodLabel                      string       `json:"PodLabel"`
-	Namespace                     string       `json:"Namespace"`
-	PodCreationTimeStamp          string       `json:"PodCreationTimeStamp"`
-	PodStartTime                  string       `json:"PodStartTime"`
-	PodStatus                     string       `json:"PodStatus"`
-	PodIp                         string       `json:"PodIp"`
-	Computer                      string       `json:"Computer"`
-	ClusterId                     string       `json:"ClusterId"`
-	ClusterName                   string       `json:"ClusterName"`
-	ServiceName                   string       `json:"ServiceName"`
-	ControllerKind                string       `json:"ControllerKind"`
-	ControllerName                string       `json:"ControllerName"`
-	PodRestartCount               int          `json:"PodRestartCount"`
-	ContainerID                   string       `json:"ContainerID"`
-	ContainerName                 string       `json:"ContainerName"`
-	ContainerRestartCount         int          `json:"ContainerRestartCount"`
-	ContainerStatus               string       `json:"ContainerStatus"`
-	ContainerCreationTimeStamp    string       `json:"ContainerCreationTimeStamp"`
+	Timestamp        string       `json:"Timestamp"`
+	Host             string       `json:"Host"`
+	ObjectName       string       `json:"ObjectName"`
+	InstanceName     string       `json:"InstanceName"`
+	Collections      string       `json:"Collections"`
 }
 
+type MetricCollection struct {
+	CounterName       string       `json:"CounterName"`
+	Value             float64      `json:"Value"`
+}
+
+
 // KubePodInventoryBlob represents the object corresponding to the payload that is sent to the ODS end point
-type KubePodInventoryBlob struct {
+type KubePerfBlob struct {
 	DataType  string     `json:"DataType"`
 	IPName    string     `json:"IPName"`
 	DataItems []DataItem `json:"DataItems"`
 }
 
-var (
-	certFile = flag.String("cert", "C:\\Users\\rashmy\\Documents\\ReplicaSetFluentBit\\oms.crt", "OMS Agent Certificate")
-	keyFile  = flag.String("key", "C:\\Users\\rashmy\\Documents\\ReplicaSetFluentBit\\oms.key", "Certificate Private Key")
-)
+//export FLBPluginRegister
+func FLBPluginRegister(ctx unsafe.Pointer) int {
+	return output.FLBPluginRegister(ctx, "kubeperf", "Stdout GO!")
+}
 
-//type MapInterface map[interface{}]interface{}
+//export FLBPluginInit
+// (fluentbit will call this)
+// ctx (context) pointer to fluentbit context (state/ c code)
+func FLBPluginInit(ctx unsafe.Pointer) int {
+	// Example to retrieve an optional configuration parameter
+	param := output.FLBPluginConfigKey(ctx, "param")
+	fmt.Printf("[flb-go] plugin parameter = '%s'\n", param)
+	return output.FLB_OK
+}
 
 var ClusterId string
 var ClusterName string
 var clientset *kubernetes.Clientset
 
-func getServiceNameFromLabels(namespace string, labels map[string]string, serviceList *v1.ServiceList) string {
+/*func getServiceNameFromLabels(namespace string, labels map[string]string, serviceList *v1.ServiceList) string {
 	serviceName := ""
 	if labels !=nil {
 		if serviceList != nil {
@@ -80,7 +92,6 @@ func getServiceNameFromLabels(namespace string, labels map[string]string, servic
 						}
 					}
 					if found == len(selectorLabels) {
-						fmt.Println(service.ObjectMeta.Name)
 						return service.ObjectMeta.Name
 					}
 				}
@@ -88,7 +99,7 @@ func getServiceNameFromLabels(namespace string, labels map[string]string, servic
 		}
 	}
 	return serviceName
-}
+}*/
 
 func getClusterName() string {
 	if (ClusterName != "") {
@@ -123,7 +134,7 @@ func getClusterName() string {
 		}
 	}
 	return ClusterName
-}
+} 
 
 func getClusterId() string{
 	if ClusterId != "" {
@@ -139,6 +150,107 @@ func getClusterId() string{
     return ClusterId
 }
 
+func getContainerResourceRequestsAndLimits(pods *v1.PodList, metricCategory string, metricNameToCollect string, metricNametoReturn string) []DataItem{
+	var metricItems []DataItem
+	clusterId := getClusterId()
+	for _, pod := range pods.Items {
+		var metricItem []DataItem
+		
+		podmetadata := pod.ObjectMeta
+		podNameSpace := podmetadata.Namespace
+		var podUid types.UID
+		if podNameSpace == "kube-system" && podmetadata.OwnerReferences == nil {
+            // The above case seems to be the only case where you have horizontal scaling of pods
+            // but no controller, in which case cAdvisor picks up kubernetes.io/config.hash
+            // instead of the actual poduid. Since this uid is not being surface into the UX
+            // its ok to use this.
+            // Use kubernetes.io/config.hash to be able to correlate with cadvisor data
+				podUid = types.UID(podmetadata.Annotations["kubernetes.io/config.hash"])
+				//['kubernetes.io/config.hash']
+		} else {
+			podUid = podmetadata.UID
+		}
+
+		if pod.Spec.Containers != nil && pod.Spec.NodeName != "" {
+			nodeName := pod.Spec.NodeName
+			record := make(map[interface{}]interface{})
+			for _, container := range pod.Spec.Containers {
+				containerName = container.Name
+				currentTime := time.Now()
+				metricTime := currentTime.UTC().Format(time.RFC3339)
+				metricValue float64
+				if container.Resources != nil && len(container.Resources) > 0 && container.Resources.MetricCategory != nil && container.Resources.MetricCategory.MetricNameToCollect != nil {
+					metricValue := getMetricNumericValue(metricNameToCollect, container.Resources.MetricCategory.MetricNameToCollect)
+					record["Timestamp"] = metricTime
+					record["Host"] = nodeName
+					record["ObjectName"] = "K8SContainer"
+					record["InstanceName"] = clusterId + "/" + podUid + "/" + containerName
+				}
+				else {
+					nodeMetricsHashKey := clusterId + "/" + nodeName + "_" + "allocatable" +  "_" + metricNameToCollect
+					 if metricCategory == "limits" && NodeMetrics.NodeMetricsHashKey != nil {
+						metricValue := NodeMetrics[nodeMetricsHashKey]
+						record["Timestamp"] = metricTime
+						record["Host"] = nodeName
+						record["ObjectName"] = "K8SContainer"
+						record["InstanceName"] = clusterId + "/" + podUid + "/" + containerName
+					}
+				}
+				metricCounter := MetricCollection {
+						CounterName: metricNametoReturn ,
+						Value: metricValue
+				}
+				counters, err := json.Marshal(metricCounter)
+				if (err == nil) {
+					counterString := "[" + string(counters) + "]"
+					record["Collections"] = counterString
+				}
+				mapstructure.Decode(record, &metricItem)
+				metricItems = append(metricItems, metricItem)
+			}
+		}
+	}
+}
+
+
+
+
+func enumerate() {
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		panic(err.Error())
+	}
+	clientset, err = kubernetes.NewForConfig(config)
+	if err != nil {
+		panic(err.Error())
+	}
+	fmt.Println("Getting pods...")
+	pods, err := clientset.CoreV1().Pods("").List(metav1.ListOptions{})
+	if err != nil {
+		panic(err.Error())
+	}
+	fmt.Println("Done getting pods...")
+	var dataItems []DataItem
+	dataItems = append(dataItems, getContainerResourceRequestsAndLimits(pods, "requests", "cpu","cpuRequestNanoCores"))
+
+	fmt.Println("Getting nodes...")
+
+	nodes, err := clientset.CoreV1().Nodes("").List(metav1.ListOptions{})
+	if err != nil {
+		panic(err.Error())
+	}
+	fmt.Println("Done getting nodes...")
+	
+
+}
+
+
+
+
+
+
+
+
 func parseAndEmitRecords(pods *v1.PodList, services *v1.ServiceList) {
 	var dataItems []DataItem
 	for _, pod := range pods.Items {
@@ -150,7 +262,7 @@ func parseAndEmitRecords(pods *v1.PodList, services *v1.ServiceList) {
 		//This is the time that is mapped to become TimeGenerated
 		record["CollectionTime"] = batchTime 
 		podmetadata := pod.ObjectMeta
-		record["Name"] = podmetadata.Name + "-rashmicomplete"
+		record["Name"] = podmetadata.Name + "-rashmirsmemory"
 		podNameSpace := podmetadata.Namespace
 		record["Namespace"] = podNameSpace
 		podLabels, err := json.Marshal(podmetadata.Labels)
@@ -297,7 +409,7 @@ func parseAndEmitRecords(pods *v1.PodList, services *v1.ServiceList) {
 		tlsConfig.BuildNameToCertificate()
 		transport := &http.Transport{TLSClientConfig: tlsConfig}
 
-		url := "https://2e8dbed6-141f-4854-a05e-313431fb5887.ods.opinsights.azure.com/OperationalData.svc/PostJsonDataItems"
+		url := "https://6d3a50d0-808e-4d66-86c0-7b99d810ffe1.ods.opinsights.azure.com/OperationalData.svc/PostJsonDataItems"
 		client := &http.Client{Transport: transport}
 		req, _ := http.NewRequest("POST", url, bytes.NewBuffer(marshalled))
 
@@ -310,27 +422,21 @@ func parseAndEmitRecords(pods *v1.PodList, services *v1.ServiceList) {
 		fmt.Println(statusCode)
 	}
 
-func main() {
+
+//export FLBPluginFlush
+func FLBPluginFlush(data unsafe.Pointer, length C.int, tag *C.char) int {
 	fmt.Println("Starting the application...")
-	config, err := clientcmd.BuildConfigFromFlags("", "C:\\Users\\rashmy\\.kube\\config")
-	if err != nil {
-		return
-	}
-	clientset, err = kubernetes.NewForConfig(config)
-	if err != nil {
-		return
-	}
-
-	pods, err := clientset.CoreV1().Pods("").List(metav1.ListOptions{})
-	if err != nil {
-		panic(err.Error())
-	}
-
-	services, err := clientset.CoreV1().Services("").List(metav1.ListOptions{})
-	if err != nil {
-		panic(err.Error())
-	}
-	parseAndEmitRecords(pods, services)
-
+	enumerate()
 	fmt.Println("Terminating")
+
+	return output.FLB_OK
 }
+
+//export FLBPluginExit
+func FLBPluginExit() int {
+	return output.FLB_OK
+}
+
+func main() {
+}
+

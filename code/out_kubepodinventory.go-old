@@ -1,22 +1,40 @@
 package main
 
+import "github.com/fluent/fluent-bit-go/output"
 import (
-	"bytes"
-	"crypto/tls"
-	"encoding/json"
-	"flag"
 	"fmt"
+	"unsafe"
+	"C"
+	"flag"
 	"log"
+	"encoding/json"
+	"crypto/tls"
 	"net/http"
+	"bytes"
 	"time"
 	 metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	 "k8s.io/client-go/kubernetes"
-	 "k8s.io/client-go/tools/clientcmd"
+	 //"k8s.io/client-go/tools/clientcmd"
 	 v1 "k8s.io/api/core/v1"
 	 "k8s.io/apimachinery/pkg/types"
 	 "strings"
 	 "os"
 	"github.com/mitchellh/mapstructure"
+	"k8s.io/client-go/rest"
+)
+
+var (
+	// ImageIDMap caches the container id to image mapping
+	//ImageIDMap map[string]string
+
+	// NameIDMap caches the container it to Name mapping
+	//NameIDMap map[string]string
+	
+	// KeyFile is the path to the private key file used for auth
+	keyFile = flag.String("key", "/etc/opt/microsoft/omsagent/cfdb22fe-5d51-415a-9dfa-5fa00f0eee2a/certs/oms.key", "Private Key File")
+
+	// CertFile is the path to the cert used for auth
+	certFile = flag.String("cert", "/etc/opt/microsoft/omsagent/cfdb22fe-5d51-415a-9dfa-5fa00f0eee2a/certs/oms.crt", "OMS Agent Certificate")
 )
 
 // DataItem represents the object corresponding to the json that is sent by fluentbit tail plugin
@@ -44,6 +62,7 @@ type DataItem struct {
 	ContainerCreationTimeStamp    string       `json:"ContainerCreationTimeStamp"`
 }
 
+
 // KubePodInventoryBlob represents the object corresponding to the payload that is sent to the ODS end point
 type KubePodInventoryBlob struct {
 	DataType  string     `json:"DataType"`
@@ -51,12 +70,20 @@ type KubePodInventoryBlob struct {
 	DataItems []DataItem `json:"DataItems"`
 }
 
-var (
-	certFile = flag.String("cert", "C:\\Users\\rashmy\\Documents\\ReplicaSetFluentBit\\oms.crt", "OMS Agent Certificate")
-	keyFile  = flag.String("key", "C:\\Users\\rashmy\\Documents\\ReplicaSetFluentBit\\oms.key", "Certificate Private Key")
-)
+//export FLBPluginRegister
+func FLBPluginRegister(ctx unsafe.Pointer) int {
+	return output.FLBPluginRegister(ctx, "kubepodinventory", "Stdout GO!")
+}
 
-//type MapInterface map[interface{}]interface{}
+//export FLBPluginInit
+// (fluentbit will call this)
+// ctx (context) pointer to fluentbit context (state/ c code)
+func FLBPluginInit(ctx unsafe.Pointer) int {
+	// Example to retrieve an optional configuration parameter
+	param := output.FLBPluginConfigKey(ctx, "param")
+	fmt.Printf("[flb-go] plugin parameter = '%s'\n", param)
+	return output.FLB_OK
+}
 
 var ClusterId string
 var ClusterName string
@@ -297,7 +324,7 @@ func parseAndEmitRecords(pods *v1.PodList, services *v1.ServiceList) {
 		tlsConfig.BuildNameToCertificate()
 		transport := &http.Transport{TLSClientConfig: tlsConfig}
 
-		url := "https://2e8dbed6-141f-4854-a05e-313431fb5887.ods.opinsights.azure.com/OperationalData.svc/PostJsonDataItems"
+		url := "https://cfdb22fe-5d51-415a-9dfa-5fa00f0eee2a.ods.opinsights.azure.com/OperationalData.svc/PostJsonDataItems"
 		client := &http.Client{Transport: transport}
 		req, _ := http.NewRequest("POST", url, bytes.NewBuffer(marshalled))
 
@@ -310,15 +337,17 @@ func parseAndEmitRecords(pods *v1.PodList, services *v1.ServiceList) {
 		fmt.Println(statusCode)
 	}
 
-func main() {
+
+//export FLBPluginFlush
+func FLBPluginFlush(data unsafe.Pointer, length C.int, tag *C.char) int {
 	fmt.Println("Starting the application...")
-	config, err := clientcmd.BuildConfigFromFlags("", "C:\\Users\\rashmy\\.kube\\config")
+	config, err := rest.InClusterConfig()
 	if err != nil {
-		return
+		panic(err.Error())
 	}
 	clientset, err = kubernetes.NewForConfig(config)
 	if err != nil {
-		return
+		panic(err.Error())
 	}
 
 	pods, err := clientset.CoreV1().Pods("").List(metav1.ListOptions{})
@@ -333,4 +362,14 @@ func main() {
 	parseAndEmitRecords(pods, services)
 
 	fmt.Println("Terminating")
+
+	return output.FLB_OK
+}
+
+//export FLBPluginExit
+func FLBPluginExit() int {
+	return output.FLB_OK
+}
+
+func main() {
 }
