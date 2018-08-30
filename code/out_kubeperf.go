@@ -232,6 +232,9 @@ func enumerate() {
 	fmt.Println("Done getting pods...")
 	var dataItems []DataItem
 	dataItems = append(dataItems, getContainerResourceRequestsAndLimits(pods, "requests", "cpu","cpuRequestNanoCores"))
+	dataItems = append(dataItems, getContainerResourceRequestsAndLimits(pods, "requests", "memory","memoryRequestBytes"))
+	dataItems = append(dataItems, getContainerResourceRequestsAndLimits(pods, "limits", "cpu","cpuLimitNanoCores"))
+	dataItems = append(dataItems, getContainerResourceRequestsAndLimits(pods, "limits", "memory","memoryLimitBytes"))
 
 	fmt.Println("Getting nodes...")
 
@@ -240,8 +243,42 @@ func enumerate() {
 		panic(err.Error())
 	}
 	fmt.Println("Done getting nodes...")
-	
+	dataItems = append(dataItems, parseNodeLimits(nodes, "allocatable", "cpu", "cpuAllocatableNanoCores"))
+	dataItems = append(dataItems, parseNodeLimits(nodes, "allocatable", "memory", "memoryAllocatableBytes"))
+	dataItems = append(dataItems, parseNodeLimits(nodes, "capacity", "cpu", "cpuCapacityNanoCores"))
+	dataItems = append(dataItems, parseNodeLimits(nodes, "capacity", "memory", "memoryCapacityBytes"))
 
+	podEntry := KubePodInventoryBlob{
+		DataType:  "LINUX_PERF_BLOB",
+		IPName:    "LogManagement",
+		DataItems: dataItems
+	}
+
+	marshalled, err := json.Marshal(podEntry)
+	
+	cert, err := tls.LoadX509KeyPair(*certFile, *keyFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+	}
+
+	tlsConfig.BuildNameToCertificate()
+	transport := &http.Transport{TLSClientConfig: tlsConfig}
+
+	url := "https://6d3a50d0-808e-4d66-86c0-7b99d810ffe1.ods.opinsights.azure.com/OperationalData.svc/PostJsonDataItems"
+	client := &http.Client{Transport: transport}
+	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(marshalled))
+
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	statusCode := resp.Status
+	fmt.Println(statusCode)
 }
 
 
