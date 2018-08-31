@@ -197,7 +197,7 @@ func getContainerResourceRequestsAndLimits(pods *v1.PodList, metricCategory stri
 					}
 				}
 				metricCounter := MetricCollection {
-						CounterName: metricNametoReturn ,
+						CounterName: metricNametoReturn,
 						Value: metricValue
 				}
 				counters, err := json.Marshal(metricCounter)
@@ -210,9 +210,42 @@ func getContainerResourceRequestsAndLimits(pods *v1.PodList, metricCategory stri
 			}
 		}
 	}
+	return metricItems
 }
 
-
+func parseNodeLimits(nodes *v1.NodeList, metricCategory string, metricNameToCollect string, metricNametoReturn string) []DataItem {
+	var metricItems []DataItem
+	clusterId = getClusterId()
+	metricTime := currentTime.UTC().Format(time.RFC3339)
+	for _, node := range nodes.Items {
+		nodeMetaData := node.ObjectMeta
+		nodeName := nodeMetaData.Name
+		if node.Status.MetricCategory != nil {
+			metricValue := getMetricNumericValue(metricNameToCollect, node.Status.MetricCategory.MetricNameToCollect)
+			record := make(map[interface{}]interface{})
+			record["Timestamp"] = metricTime
+			record["Host"] = nodeName
+			record["ObjectName"] = "K8SNode"
+			record["InstanceName"] = clusterId + "/" + nodeName
+			metricCounter := MetricCollection {
+				CounterName: metricNametoReturn,
+				Value: metricValue
+			}
+			counters, err := json.Marshal(metricCounter)
+			if (err == nil) {
+				counterString := "[" + string(counters) + "]"
+				record["Collections"] = counterString
+			}
+			mapstructure.Decode(record, &metricItem)
+			metricItems = append(metricItems, metricItem)
+			//push node level metrics to a inmem hash so that we can use it looking up at container level.
+			//Currently if container level cpu & memory limits are not defined we default to node level limits
+			NodeMetrics[clusterId + "/" + nodeName + "_" + metricCategory + "_" + metricNameToCollect] = metricValue
+			//@Log.info ("Node metric hash: #{@@NodeMetrics}")
+		}
+	}
+	return metricItems
+}
 
 
 func enumerate() {
