@@ -21,6 +21,7 @@ import (
 	 "os"
 	"github.com/mitchellh/mapstructure"
 	"k8s.io/client-go/rest"
+	"math"
 )
 
 var (
@@ -74,33 +75,6 @@ var ClusterId string
 var ClusterName string
 var clientset *kubernetes.Clientset
 
-/*func getServiceNameFromLabels(namespace string, labels map[string]string, serviceList *v1.ServiceList) string {
-	serviceName := ""
-	if labels !=nil {
-		if serviceList != nil {
-			for _, service := range serviceList.Items {
-				found := 0
-				if service.Spec.Selector != nil && service.ObjectMeta.Namespace == namespace {
-					selectorLabels := service.Spec.Selector
-					if selectorLabels != nil {
-						for key, value := range selectorLabels {
-							if labels[key] == value {
-								//break
-								found = found + 1
-							}
-							//found = found + 1
-						}
-					}
-					if found == len(selectorLabels) {
-						return service.ObjectMeta.Name
-					}
-				}
-			}
-		}
-	}
-	return serviceName
-}*/
-
 func getClusterName() string {
 	if (ClusterName != "") {
 		return ClusterName
@@ -148,6 +122,96 @@ func getClusterId() string{
 		ClusterId = cluster
 	}
     return ClusterId
+}
+
+func getMetricNumericValue(metricName string, metricVal string) float64{
+	metricValue := metricVal
+	switch metricName {
+		//when "memory" #convert to bytes for memory
+		//https://kubernetes.io/docs/tasks/configure-pod-container/assign-memory-resource/
+		case "memory" :	if strings.HasSuffix(metricValue, "Ki") {
+							strings.TrimSuffix(metricValue, "Ki")
+                            metricValue := Float(metricValue) * 1024.0
+							metricValue = math.Pow(metricValue, 1)
+						} else if strings.HasSuffix(metricValue, "Mi") {
+							strings.TrimSuffix(metricValue, "Mi")
+                            metricValue := Float(metricValue) * 1024.0
+							metricValue = math.Pow(metricValue, 2)
+						} else if strings.HasSuffix(metricValue, "Gi") {
+							strings.TrimSuffix(metricValue, "Gi")
+                            metricValue := Float(metricValue) * 1024.0
+							metricValue = math.Pow(metricValue, 3)
+						} else if strings.HasSuffix(metricValue, "Ti") {
+							strings.TrimSuffix(metricValue, "Ti")
+                            metricValue := Float(metricValue) * 1024.0
+							metricValue = math.Pow(metricValue, 4)
+						} else if strings.HasSuffix(metricValue, "Pi") {
+							strings.TrimSuffix(metricValue, "Pi")
+                            metricValue := Float(metricValue) * 1024.0
+							metricValue = math.Pow(metricValue, 5)
+						} else if strings.HasSuffix(metricValue, "Ei") {
+							strings.TrimSuffix(metricValue, "Ei")
+                            metricValue := Float(metricValue) * 1024.0
+							metricValue = math.Pow(metricValue, 6)
+						} else if strings.HasSuffix(metricValue, "Zi") {
+							strings.TrimSuffix(metricValue, "Zi")
+                            metricValue := Float(metricValue) * 1024.0
+							metricValue = math.Pow(metricValue, 7)
+						} else if strings.HasSuffix(metricValue, "Yi") {
+							strings.TrimSuffix(metricValue, "Yi")
+                            metricValue := Float(metricValue) * 1024.0
+							metricValue = math.Pow(metricValue, 8)
+						} else if strings.HasSuffix(metricValue, "K") {
+							strings.TrimSuffix(metricValue, "K")
+                            metricValue := Float(metricValue) * 1000.0
+							metricValue = math.Pow(metricValue, 1)
+						} else if strings.HasSuffix(metricValue, "M") {
+							strings.TrimSuffix(metricValue, "M")
+                            metricValue := Float(metricValue) * 1000.0
+							metricValue = math.Pow(metricValue, 2)
+						} else if strings.HasSuffix(metricValue, "G") {
+							strings.TrimSuffix(metricValue, "G")
+                            metricValue := Float(metricValue) * 1000.0
+							metricValue = math.Pow(metricValue, 3)
+						} else if strings.HasSuffix(metricValue, "T") {
+							strings.TrimSuffix(metricValue, "T")
+                            metricValue := Float(metricValue) * 1000.0
+							metricValue = math.Pow(metricValue, 4)
+						} else if strings.HasSuffix(metricValue, "P") {
+							strings.TrimSuffix(metricValue, "P")
+                            metricValue := Float(metricValue) * 1000.0
+							metricValue = math.Pow(metricValue, 5)
+						} else if strings.HasSuffix(metricValue, "E") {
+							strings.TrimSuffix(metricValue, "E")
+                            metricValue := Float(metricValue) * 1000.0
+							metricValue = math.Pow(metricValue, 6)
+						} else if strings.HasSuffix(metricValue, "Z") {
+							strings.TrimSuffix(metricValue, "Z")
+                            metricValue := Float(metricValue) * 1000.0
+							metricValue = math.Pow(metricValue, 7)
+						} else if strings.HasSuffix(metricValue, "Y") {
+							strings.TrimSuffix(metricValue, "Y")
+                            metricValue := Float(metricValue) * 1000.0
+							metricValue = math.Pow(metricValue, 8)
+						} else {
+							//assuming there are no units specified, it is bytes (the below conversion will fail for other unsupported 'units')
+							metricValue = Float(metricValue)
+						}
+		//convert to nanocores for cpu
+		/*https://kubernetes.io/docs/tasks/configure-pod-container/assign-cpu-resource/ */
+		case "cpu" : if strings.HasSuffix(metricValue, "m") {
+							strings.TrimSuffix(metricValue, "m")
+                            metricValue := Float(metricValue) * 1000.0
+							metricValue = math.Pow(metricValue, 2)
+						} else {
+							//assuming no units specified, it is cores that we are converting to nanocores (the below conversion will fail for other unsupported 'units')
+							metricValue := Float(metricValue) * 1000.0
+							metricValue = math.Pow(metricValue, 3)
+						}
+		default :	metricValue = 0
+		// @Log.warn("getMetricNumericValue: Unsupported metric #{metricName}. Returning 0 for metric value")
+	}
+	return metricValue
 }
 
 func getContainerResourceRequestsAndLimits(pods *v1.PodList, metricCategory string, metricNameToCollect string, metricNametoReturn string) []DataItem{
