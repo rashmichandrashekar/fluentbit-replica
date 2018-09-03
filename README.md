@@ -44,4 +44,7 @@ sudo apt-get install td-agent-bit sqlite3 libsqlite3-dev
 
 /opt/td-agent-bit/bin/td-agent-bit -c /etc/td-agent-bit/td-agent-bit.conf -e <path to.so file>
         
+#To run multiple plugins,
+/opt/td-agent-bit/bin/td-agent-bit -c /etc/td-agent-bit/td-agent-bit.conf -e <path to.so file> -e <path to another .so file>
+
 
