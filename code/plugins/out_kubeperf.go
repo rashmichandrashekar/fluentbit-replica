@@ -34,11 +34,11 @@ var (
 
 // DataItem represents the object corresponding to the json that is sent by fluentbit tail plugin
 type DataItem struct {
-	Timestamp        string       `json:"Timestamp"`
-	Host             string       `json:"Host"`
-	ObjectName       string       `json:"ObjectName"`
-	InstanceName     string       `json:"InstanceName"`
-	Collections      string       `json:"Collections"`
+	Timestamp        string                   `json:"Timestamp"`
+	Host             string                   `json:"Host"`
+	ObjectName       string                   `json:"ObjectName"`
+	InstanceName     string                   `json:"InstanceName"`
+	Collections      []MetricCollection       `json:"Collections"`
 }
 
 type MetricCollection struct {
