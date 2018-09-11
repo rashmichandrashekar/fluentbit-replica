@@ -116,6 +116,7 @@ func getContainerResourceRequestsAndLimits(pods *v1.PodList, metricCategory stri
 	clusterId := getClusterId()
 	for _, pod := range pods.Items {
 		var metricItem DataItem
+		var metricCounterItems []MetricCollection
 		
 		podmetadata := pod.ObjectMeta
 		podNameSpace := podmetadata.Namespace
@@ -140,7 +141,6 @@ func getContainerResourceRequestsAndLimits(pods *v1.PodList, metricCategory stri
 				currentTime := time.Now()
 				metricTime := currentTime.UTC().Format(time.RFC3339)
 				var metricValue float64
-				//if container.Resources[metricCategory] != nil && container.Resources[metricCategory][metricNameToCollect] != nil {
 				switch metricNameToCollect {
 					case "cpu": if metricCategory == "limits" {
 									if container.Resources.Limits.Cpu != nil {
@@ -170,14 +170,12 @@ func getContainerResourceRequestsAndLimits(pods *v1.PodList, metricCategory stri
 				record["ObjectName"] = "K8SContainer"
 				record["InstanceName"] = clusterId + "/" + string(podUid)+ "/" + containerName
 				metricCounter := MetricCollection {
-					CounterName: metricNametoReturn+ "rashmi",
+					CounterName: metricNametoReturn,
 					Value: metricValue,
 				}
-				counters, err := json.Marshal(metricCounter)
-				if (err == nil) {
-					counterString := "[" + string(counters) + "]"
-					record["Collections"] = counterString
-				}
+				metricCounterItems = append(metricCounterItems, metricCounter)
+				record["Collections"] = metricCounterItems
+
 				mapstructure.Decode(record, &metricItem)
 				metricItems = append(metricItems, metricItem)
 			}
@@ -193,12 +191,11 @@ func parseNodeLimits(nodes *v1.NodeList, metricCategory string, metricNameToColl
 	metricTime := currentTime.UTC().Format(time.RFC3339)
 	for _, node := range nodes.Items {
 		var metricItem DataItem
+		var metricCounterItems []MetricCollection
+
 		nodeMetaData := node.ObjectMeta
 		nodeName := nodeMetaData.Name
 		var metricValue float64
-		//if node.Status != nil {
-			//metricValue := getMetricNumericValue(metricNameToCollect, node.Status.MetricCategory.MetricNameToCollect)
-			//metricValue := getMetricNumericValue(metricNameToCollect, node.Status.MetricCategory.MetricNameToCollect)
 			switch metricNameToCollect {
 				case "cpu": if metricCategory == "allocatable" {
 								nodeMetricValue := node.Status.Allocatable.Cpu().Value()
@@ -224,24 +221,18 @@ func parseNodeLimits(nodes *v1.NodeList, metricCategory string, metricNameToColl
 				CounterName: metricNametoReturn,
 				Value: metricValue,
 			}
-			//fmt.Println(metricCounter)
-			counters, err := json.Marshal(metricCounter)
-			if (err == nil) {
-				counterString := "[" + string(counters) + "]"
-				record["Collections"] = counterString
-			}
+			metricCounterItems = append(metricCounterItems, metricCounter)
+			record["Collections"] = metricCounterItems
+			
 			mapstructure.Decode(record, &metricItem)
 			metricItems = append(metricItems, metricItem)
 			//push node level metrics to a inmem hash so that we can use it looking up at container level.
 			//Currently if container level cpu & memory limits are not defined we default to node level limits
 			NodeMetrics := make(map[string]float64)
 			NodeMetrics[clusterId + "/" + nodeName + "_" + metricCategory + "_" + metricNameToCollect] = metricValue
-			//@Log.info ("Node metric hash: #{@@NodeMetrics}")
-		//}
 	}
 	return metricItems
 }
-
 
 func enumerate() {
 	/*config, err := rest.InClusterConfig()
@@ -298,8 +289,8 @@ func enumerate() {
 	transport := &http.Transport{TLSClientConfig: tlsConfig}
 
 	//url := "https://6d3a50d0-808e-4d66-86c0-7b99d810ffe1.ods.opinsights.azure.com/OperationalData.svc/PostJsonDataItems"
-	//url := "https://fed8f683-b8a5-452f-9191-beb989ad4b76.ods.opinsights.azure.com/OperationalData.svc/PostJsonDataItems"
-	url := "https://2e8dbed6-141f-4854-a05e-313431fb5887.ods.opinsights.azure.com/OperationalData.svc/PostJsonDataItems"
+	url := "https://fed8f683-b8a5-452f-9191-beb989ad4b76.ods.opinsights.azure.com/OperationalData.svc/PostJsonDataItems"
+	//url := "https://2e8dbed6-141f-4854-a05e-313431fb5887.ods.opinsights.azure.com/OperationalData.svc/PostJsonDataItems"
 
 	client := &http.Client{Transport: transport}
 	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(marshalled))
@@ -324,68 +315,7 @@ func main() {
 		return
 	}
 	enumerate()
-		/*var dataItems []DataItem
-		record := make(map[interface{}]interface{})
-		var dataItem DataItem
-
-		record["Timestamp"] = "2018-09-01T00:49:51Z"
-		record["Host"] = "aks-agentpool-38986853-2"
-		record["ObjectName"] = "K8SNode"
-		record["Collections"] = "[{\"CounterName\"=>\"memoryCapacityBytes\", \"Value\"=>3609268224.0}]"
-		record["InstanceName"] = "/subscriptions/692aea0b-2d89-4e7e-ae30-fffe40782ee2/resourceGroups/rashmi-rashmi-agent-latest/providers/Microsoft.ContainerService/managedClusters/rashmi-agent-latest/aks-agentpool-38986853-2e"
-		*/
-		/*mgGuid, err := uuid.NewV4()
-		if err != nil {
-			log.Fatal(err)
-		}
-		fmt.Println(reflect.TypeOf(mgGuid))*/
-		//record["ManagementGroupId"] = "00000000-0000-0000-0000-000000000002"
-		/*mapstructure.Decode(record, &dataItem)
-		dataItems = append(dataItems, dataItem)*/
-
-		/*record["Timestamp"] = "2018-08-01T00:49:51Z"
-		record["Host"] = "aks-agentpool-38986853-2"
-		record["ObjectName"] = "K8SContainer"
-		record["Collections"] = "[{\"CounterName\"=>\"cpuRequestNanoCores\", \"Value\"=>\"308011170.000000\"}]"
-		record["InstanceName"] = "aacee011-a4c4-11e8-a30a-0a58ac1f0c13/addon-http-application-routing-default-http-backend/rashmiinstance"
-
-		mapstructure.Decode(record, &dataItem)
-		dataItems = append(dataItems, dataItem)*/
-
-	/*podEntry := KubePerfBlob{
-		DataType:  "LINUX_PERF_BLOB",
-		IPName:    "LogManagement",
-		DataItems: dataItems}
-	//fmt.Println(podEntry)
-	marshalled, err := json.Marshal(podEntry)
-	fmt.Println(string(marshalled))
-
-	cert, err := tls.LoadX509KeyPair(*certFile, *keyFile)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-	}
-
-	tlsConfig.BuildNameToCertificate()
-	transport := &http.Transport{TLSClientConfig: tlsConfig}
-	*/
-	/*url := "https://fed8f683-b8a5-452f-9191-beb989ad4b76.ods.opinsights.azure.com/OperationalData.svc/PostJsonDataItems"*/
-	//url := "https://2e8dbed6-141f-4854-a05e-313431fb5887.ods.opinsights.azure.com/OperationalData.svc/PostJsonDataItems"
-
-	/*client := &http.Client{Transport: transport}
-	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(marshalled))
-
-	resp, err := client.Do(req)
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	statusCode := resp.Status
-
-	fmt.Println(statusCode)*/
+		
 	fmt.Println(time.Now())
 	fmt.Println("Terminating")
 }

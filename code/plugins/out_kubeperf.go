@@ -46,7 +46,6 @@ type MetricCollection struct {
 	Value             float64      `json:"Value"`
 }
 
-
 // KubePerfBlob represents the object corresponding to the payload that is sent to the ODS end point
 type KubePerfBlob struct {
 	DataType  string     `json:"DataType"`
@@ -128,6 +127,7 @@ func getContainerResourceRequestsAndLimits(pods *v1.PodList, metricCategory stri
 	clusterId := getClusterId()
 	for _, pod := range pods.Items {
 		var metricItem DataItem
+		var metricCounterItems []MetricCollection
 		
 		podmetadata := pod.ObjectMeta
 		podNameSpace := podmetadata.Namespace
@@ -185,11 +185,9 @@ func getContainerResourceRequestsAndLimits(pods *v1.PodList, metricCategory stri
 					CounterName: metricNametoReturn,
 					Value: metricValue,
 				}
-				counters, err := json.Marshal(metricCounter)
-				if (err == nil) {
-					counterString := "[" + string(counters) + "]"
-					record["Collections"] = counterString
-				}
+				metricCounterItems = append(metricCounterItems, metricCounter)
+				record["Collections"] = metricCounterItems
+
 				mapstructure.Decode(record, &metricItem)
 				metricItems = append(metricItems, metricItem)
 			}
@@ -205,6 +203,8 @@ func parseNodeLimits(nodes *v1.NodeList, metricCategory string, metricNameToColl
 	metricTime := currentTime.UTC().Format(time.RFC3339)
 	for _, node := range nodes.Items {
 		var metricItem DataItem
+		var metricCounterItems []MetricCollection
+
 		nodeMetaData := node.ObjectMeta
 		nodeName := nodeMetaData.Name
 		var metricValue float64
@@ -236,11 +236,9 @@ func parseNodeLimits(nodes *v1.NodeList, metricCategory string, metricNameToColl
 				CounterName: metricNametoReturn,
 				Value: metricValue,
 			}
-			counters, err := json.Marshal(metricCounter)
-			if (err == nil) {
-				counterString := "[" + string(counters) + "]"
-				record["Collections"] = counterString
-			}
+			metricCounterItems = append(metricCounterItems, metricCounter)
+			record["Collections"] = metricCounterItems
+
 			mapstructure.Decode(record, &metricItem)
 			metricItems = append(metricItems, metricItem)
 			//push node level metrics to a inmem hash so that we can use it looking up at container level.
