@@ -47,7 +47,7 @@ sudo apt-get install td-agent-bit sqlite3 libsqlite3-dev
 #To run multiple plugins,
 /opt/td-agent-bit/bin/td-agent-bit -c /etc/td-agent-bit/td-agent-bit.conf -e <path to.so file> -e <path to another .so file>
 
-#To forward to a port and get the output from the input plugin, make the changes in the conf file - td-agent-bit.conf
+#To forward to a port and get the output from the input plugin, make the changes in the conf file - td-agent-bit.conf and container.conf
 Make sure to run the fluentbit before restarting the omsagent. If the fluentbit is not running when the omsagent is restarted things dont work as expected.
 
 
